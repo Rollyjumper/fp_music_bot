@@ -28,27 +28,16 @@ impl Read for VCBAudioSource {
     // vérifier que ça copie bien
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
         //println!("VCBAudioSource read appelé.");
-        let mut q = self.queue.lock().unwrap();
-        match q.len() {
-            0 => {
-                // normalement ça ne devrait pas être le cas
-                buf.copy_from_slice(&[0, 0]);
-                //println!("vide!");
-                Ok(2)
-            }
-            _ => {
-                //println!("juste avant copy_from_slice.. buf.len = {}, queue.len = {}", buf.len(), q.len());
-                //buf.copy_from_slice(&q[..buf.len()]);
-                //println!("juste après copy_from_slice : buf = {:?}", buf);
-                //q.remove(0);
-                //q.remove(0);
-                // println!("size of buf = {}", buf.len());
-                // size of buf = 2 always ? 
-                let i = q.pop_front().unwrap();
-                LittleEndian::write_i16(buf, i);
-                Ok(buf.len())
+        loop {
+            let q = self.queue.lock().unwrap();
+            if q.len() != 0 {
+                break;
             }
         }
+        let mut q = self.queue.lock().unwrap();
+        let i = q.pop_front().unwrap();
+        LittleEndian::write_i16(buf, i);
+        Ok(buf.len())
     }
 }
 
