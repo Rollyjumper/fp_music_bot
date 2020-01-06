@@ -7,6 +7,7 @@
 //! features = ["cache", "framework", "standard_framework", "voice"]
 //! ```
 use std::sync::Arc;
+use std::env;
 
 // Import the client's bridge to the voice manager. Since voice is a standalone
 // feature, it's not as ergonomic to work with as it could be. The client
@@ -67,9 +68,8 @@ impl EventHandler for Handler {
 
 fn main() {
     // Configure the client with your Discord bot token in the environment.
-    // let token = env::var("DISCORD_TOKEN")
-    //     .expect("Expected a token in the environment");
-    let token = "NjU1MDEyOTQzNjk5NzcxNDEy.XfN6hQ.53r3apnvtTB9sWGVQmfzlseThb8";
+    let token = env::var("DISCORD_TOKEN")
+         .expect("Expected a token in the environment");
     let mut client = Client::new(&token, Handler).expect("Err creating client");
 
     // Obtain a lock to the data owned by the client, and insert the client's

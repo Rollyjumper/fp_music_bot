@@ -15,9 +15,11 @@ use byteorder::{ByteOrder, LittleEndian};
 
 use std::sync::{Arc, Mutex};
 
+use std::collections::VecDeque;
+
 pub struct VCBAudioSource {
     stereo: bool,
-    queue: Arc<Mutex<Vec<u8>>>,
+    queue: Arc<Mutex<VecDeque<i16>>>,
     event_loop: Arc<Mutex<EventLoop>>,
     stream_id: StreamId,
 }
@@ -28,17 +30,22 @@ impl Read for VCBAudioSource {
         //println!("VCBAudioSource read appelé.");
         let mut q = self.queue.lock().unwrap();
         match q.len() {
-            0 | 1 => {
+            0 => {
+                // normalement ça ne devrait pas être le cas
                 buf.copy_from_slice(&[0, 0]);
                 //println!("vide!");
                 Ok(2)
             }
             _ => {
                 //println!("juste avant copy_from_slice.. buf.len = {}, queue.len = {}", buf.len(), q.len());
-                buf.copy_from_slice(&q[..buf.len()]);
+                //buf.copy_from_slice(&q[..buf.len()]);
                 //println!("juste après copy_from_slice : buf = {:?}", buf);
-                q.remove(0);
-                q.remove(0);
+                //q.remove(0);
+                //q.remove(0);
+                // println!("size of buf = {}", buf.len());
+                // size of buf = 2 always ? 
+                let i = q.pop_front().unwrap();
+                LittleEndian::write_i16(buf, i);
                 Ok(buf.len())
             }
         }
@@ -63,7 +70,7 @@ impl VCBAudioSource {
             .unwrap()
             .build_input_stream(&device, &format)?; // attention ici peut-être renvoyer un Result<>
         Ok(VCBAudioSource {
-            queue: Arc::new(Mutex::new(Vec::<u8>::new())),
+            queue: Arc::new(Mutex::new(VecDeque::<i16>::new())),
             stereo: (format.channels >= 2),
             event_loop: event_loop,
             stream_id: stream_id,
@@ -101,36 +108,27 @@ impl VCBAudioSource {
                     cpal::StreamData::Input {
                         buffer: cpal::UnknownTypeInputBuffer::U16(buffer),
                     } => {
-                        let mut b = [0; 2];
                         for sample in buffer.iter() {
                             let sample = cpal::Sample::to_i16(sample);
-                            LittleEndian::write_i16(&mut b, sample);
-                            let mut a = b.to_vec();
                             let mut q2 = q.lock().unwrap();
-                            q2.append(&mut a);
+                            q2.push_back(sample);
                         }
                     }
                     cpal::StreamData::Input {
                         buffer: cpal::UnknownTypeInputBuffer::I16(buffer),
                     } => {
-                        let mut b = [0; 2];
                         for &sample in buffer.iter() {
-                            LittleEndian::write_i16(&mut b, sample);
-                            let mut a = b.to_vec();
                             let mut q2 = q.lock().unwrap();
-                            q2.append(&mut a);
+                            q2.push_back(sample);
                         }
                     }
                     cpal::StreamData::Input {
                         buffer: cpal::UnknownTypeInputBuffer::F32(buffer),
                     } => {
-                        let mut b = [0; 2];
                         for sample in buffer.iter() {
                             let sample = cpal::Sample::to_i16(sample);
-                            LittleEndian::write_i16(&mut b, sample);
-                            let mut a = b.to_vec();
                             let mut q2 = q.lock().unwrap();
-                            q2.append(&mut a);
+                            q2.push_back(sample);
                         }
                     }
                     _ => (),
