@@ -282,8 +282,8 @@ fn play(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
     let mut manager = manager_lock.lock();
 
     if let Some(handler) = manager.get_mut(guild_id) {
-        let vcba =
-            VCBAudioSource::new("VoiceMeeter Aux Output (VB-Audio VoiceMeeter VAIO)".to_string())
+        let mut vcba =
+            VCBAudioSource::new("VoiceMeeter Aux Output (VB-Audio VoiceMeeter AUX VAIO)".to_string())
                 .expect("Problem creating VCBAudioSource");
         match vcba.open() {
             Ok(()) => (),

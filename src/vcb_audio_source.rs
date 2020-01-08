@@ -7,7 +7,7 @@ extern crate cpal;
 
 //use serenity::voice::{AudioType, AudioSource};
 use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
-use cpal::{EventLoop, StreamId};
+use cpal::{StreamId, Device};
 
 use std::io::Read;
 
@@ -20,8 +20,8 @@ use std::collections::VecDeque;
 pub struct VCBAudioSource {
     stereo: bool,
     queue: Arc<Mutex<VecDeque<i16>>>,
-    event_loop: Arc<Mutex<EventLoop>>,
-    stream_id: StreamId,
+    device: Device, 
+    stream_id: Option<StreamId>,
 }
 
 impl Read for VCBAudioSource {
@@ -52,17 +52,11 @@ impl VCBAudioSource {
         let format = device
             .default_input_format()
             .expect("Failed to get default input format");
-
-        let event_loop = Arc::new(Mutex::new(host.event_loop()));
-        let stream_id = event_loop
-            .lock()
-            .unwrap()
-            .build_input_stream(&device, &format)?; // attention ici peut-être renvoyer un Result<>
         Ok(VCBAudioSource {
             queue: Arc::new(Mutex::new(VecDeque::<i16>::new())),
             stereo: (format.channels >= 2),
-            event_loop: event_loop,
-            stream_id: stream_id,
+            stream_id: None, 
+            device: device,
         })
     }
 
@@ -71,20 +65,27 @@ impl VCBAudioSource {
     }
 
     pub fn close(&self) -> Result<(), anyhow::Error> {
-        let sid = self.stream_id.clone();
-        self.event_loop.lock().unwrap().destroy_stream(sid);
+        let sid = self.stream_id.clone().unwrap();
+        let host = cpal::default_host();
+        host.event_loop().destroy_stream(sid);
         Ok(())
     }
 
-    pub fn open(&self) -> Result<(), anyhow::Error> {
-        let sid = self.stream_id.clone();
-        let el = Arc::clone(&self.event_loop);
+    pub fn open(&mut self) -> Result<(), anyhow::Error> {
+        let host = cpal::default_host();
+        let el = host.event_loop();
         let q = Arc::clone(&self.queue);
 
-        self.event_loop.lock().unwrap().play_stream(sid)?;
+        let format = self.device
+            .default_input_format()
+            .expect("Failed to get default input format");
+
+        let sid = el.build_input_stream(&self.device, &format)?; // attention ici peut-être renvoyer un Result<>
+        self.stream_id = Some(sid.clone());
+        el.play_stream(sid)?;
 
         std::thread::spawn(move || {
-            el.lock().unwrap().run(move |id, event| {
+            el.run(move |id, event| {
                 let data = match event {
                     Ok(data) => data,
                     Err(err) => {
@@ -99,16 +100,14 @@ impl VCBAudioSource {
                     } => {
                         for sample in buffer.iter() {
                             let sample = cpal::Sample::to_i16(sample);
-                            let mut q2 = q.lock().unwrap();
-                            q2.push_back(sample);
+                            q.lock().unwrap().push_back(sample);
                         }
                     }
                     cpal::StreamData::Input {
                         buffer: cpal::UnknownTypeInputBuffer::I16(buffer),
                     } => {
                         for &sample in buffer.iter() {
-                            let mut q2 = q.lock().unwrap();
-                            q2.push_back(sample);
+                            q.lock().unwrap().push_back(sample);
                         }
                     }
                     cpal::StreamData::Input {
@@ -116,8 +115,7 @@ impl VCBAudioSource {
                     } => {
                         for sample in buffer.iter() {
                             let sample = cpal::Sample::to_i16(sample);
-                            let mut q2 = q.lock().unwrap();
-                            q2.push_back(sample);
+                            q.lock().unwrap().push_back(sample);
                         }
                     }
                     _ => (),
