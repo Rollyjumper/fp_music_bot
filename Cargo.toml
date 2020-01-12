@@ -1,6 +1,6 @@
 [package]
 name = "fp-music-bot"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Floris PAJANY <floris.pajany@free.fr>"]
 edition = "2018"
 
@@ -11,3 +11,5 @@ anyhow = "1.0.26"
 cpal = "0.11.0"
 serenity = { default-features = false, version = "0.7", features = ["cache", "framework", "standard_framework", "rustls_backend", "voice"] }
 byteorder = "1.0"
+clap = "2.33"
+ctrlc = "3.1.3"

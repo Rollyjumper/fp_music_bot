@@ -1,13 +1,7 @@
-//! Requires the "cache", "methods", and "voice" features be enabled in your
-//! Cargo.toml, like so:
-//!
-//! ```toml
-//! [dependencies.serenity]
-//! git = "https://github.com/serenity-rs/serenity.git"
-//! features = ["cache", "framework", "standard_framework", "voice"]
-//! ```
+extern crate clap;
+extern crate ctrlc;
+
 use std::sync::Arc;
-use std::env;
 
 // Import the client's bridge to the voice manager. Since voice is a standalone
 // feature, it's not as ergonomic to work with as it could be. The client
@@ -35,22 +29,26 @@ use serenity::{
     voice, Result as SerenityResult,
 };
 
-pub mod vcb_audio_source;
-
-use vcb_audio_source::VCBAudioSource;
-
 // This imports `typemap`'s `Key` as `TypeMapKey`.
 //use serenity::prelude::*;
 use serenity::prelude::TypeMapKey;
 
-//#[group]
-//#[commands(deafen, join, leave, mute, play, ping, undeafen, unmute)]
+pub mod vcb_audio_source;
+
+use clap::{App, Arg, SubCommand};
+use vcb_audio_source::VCBAudioSource;
 
 group!({
     name: "general", 
-    commands: [deafen, join, leave, mute, play, ping, undeafen, unmute],
+    commands: [join, leave, play],
 });
 //struct General;
+
+struct InputDevice;
+
+impl TypeMapKey for InputDevice {
+    type Value = String;
+}
 
 struct VoiceManager;
 
@@ -67,9 +65,54 @@ impl EventHandler for Handler {
 }
 
 fn main() {
-    // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN")
-         .expect("Expected a token in the environment");
+    let matches = App::new("fp-music-bot")
+        .about("Discord music bot that streams sound for a Virtual Audio Cable")
+        .arg(
+            Arg::with_name("token")
+                .long("token")
+                .short("t")
+                .env("FPMUSICBOT_DISCORD_TOKEN")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("device")
+                .long("input-device")
+                .alias("device")
+                .short("i")
+                .env("FPMUSICBOT_INPUT_DEVICE")
+                .takes_value(true),
+        )
+        .subcommand(SubCommand::with_name("list").about("Lists all compatible input devices"))
+        .get_matches();
+
+    if matches.is_present("list") {
+        println!("List of input devices : ");
+        let input_devices = VCBAudioSource::get_input_devices().unwrap();
+        if input_devices.len() == 0 {
+            println!("None !")
+        } else {
+            for d in input_devices {
+                println!("{}", d);
+            }
+        }
+        std::process::exit(0)
+    }
+
+    let token = match matches.value_of("token") {
+        Some(token) => token,
+        None => {
+            println!("error: No valid Discord token provided for the bot.\nUse --help for more informatinons.");
+            std::process::exit(1)
+        }
+    };
+    let device = match matches.value_of("device") {
+        Some(device) => device,
+        None => {
+            println!("error: No input device for the bot.\nUse --help for more informations.");
+            std::process::exit(1)
+        }
+    };
+
     let mut client = Client::new(&token, Handler).expect("Err creating client");
 
     // Obtain a lock to the data owned by the client, and insert the client's
@@ -78,6 +121,7 @@ fn main() {
     {
         let mut data = client.data.write();
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
+        data.insert::<InputDevice>(device.to_string());
     }
 
     client.with_framework(
@@ -85,47 +129,17 @@ fn main() {
             .configure(|c| c.prefix("~"))
             .group(&GENERAL_GROUP),
     );
+    let shard_manager = client.shard_manager.clone();
+
+    ctrlc::set_handler(move || {
+        shard_manager.lock().shutdown_all();
+        std::process::exit(0)
+    })
+    .expect("Error setting Ctrl-C handler");
 
     let _ = client
         .start()
         .map_err(|why| println!("Client ended: {:?}", why));
-}
-
-#[command]
-fn deafen(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let guild_id = match ctx.cache.read().guild_channel(msg.channel_id) {
-        Some(channel) => channel.read().guild_id,
-        None => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Groups and DMs not supported"),
-            );
-
-            return Ok(());
-        }
-    };
-
-    let manager_lock = ctx.data.read().get::<VoiceManager>().cloned().unwrap();
-    let mut manager = manager_lock.lock();
-
-    let handler = match manager.get_mut(guild_id) {
-        Some(handler) => handler,
-        None => {
-            check_msg(msg.reply(&ctx, "Not in a voice channel"));
-
-            return Ok(());
-        }
-    };
-
-    if handler.self_deaf {
-        check_msg(msg.channel_id.say(&ctx.http, "Already deafened"));
-    } else {
-        handler.deafen(true);
-
-        check_msg(msg.channel_id.say(&ctx.http, "Deafened"));
-    }
-
-    Ok(())
 }
 
 #[command]
@@ -150,6 +164,9 @@ fn join(ctx: &mut Context, msg: &Message) -> CommandResult {
         .get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id);
 
+    //
+    // TODO : how to check that we have permission to join ? 
+    //
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
@@ -214,55 +231,6 @@ fn leave(ctx: &mut Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
-fn mute(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let guild_id = match ctx.cache.read().guild_channel(msg.channel_id) {
-        Some(channel) => channel.read().guild_id,
-        None => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Groups and DMs not supported"),
-            );
-
-            return Ok(());
-        }
-    };
-
-    let manager_lock = ctx
-        .data
-        .read()
-        .get::<VoiceManager>()
-        .cloned()
-        .expect("Expected VoiceManager in ShareMap.");
-    let mut manager = manager_lock.lock();
-
-    let handler = match manager.get_mut(guild_id) {
-        Some(handler) => handler,
-        None => {
-            check_msg(msg.reply(&ctx, "Not in a voice channel"));
-
-            return Ok(());
-        }
-    };
-
-    if handler.self_mute {
-        check_msg(msg.channel_id.say(&ctx.http, "Already muted"));
-    } else {
-        handler.mute(true);
-
-        check_msg(msg.channel_id.say(&ctx.http, "Now muted"));
-    }
-
-    Ok(())
-}
-
-#[command]
-fn ping(context: &mut Context, msg: &Message) -> CommandResult {
-    check_msg(msg.channel_id.say(&context.http, "Pong!"));
-
-    Ok(())
-}
-
-#[command]
 fn play(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
     let guild_id = match ctx.cache.read().guild_channel(msg.channel_id) {
         Some(channel) => channel.read().guild_id,
@@ -282,9 +250,11 @@ fn play(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
     let mut manager = manager_lock.lock();
 
     if let Some(handler) = manager.get_mut(guild_id) {
-        let mut vcba =
-            VCBAudioSource::new("VoiceMeeter Aux Output (VB-Audio VoiceMeeter AUX VAIO)".to_string())
-                .expect("Problem creating VCBAudioSource");
+        let data = ctx.data.read();
+        let device = data.get::<InputDevice>();
+
+        let mut vcba = VCBAudioSource::new(device.unwrap().to_string())
+            .expect("Problem creating VCBAudioSource");
         match vcba.open() {
             Ok(()) => (),
             Err(why) => {
@@ -306,71 +276,6 @@ fn play(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
         check_msg(
             msg.channel_id
                 .say(&ctx.http, "Not in a voice channel to play in"),
-        );
-    }
-
-    Ok(())
-}
-
-#[command]
-fn undeafen(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let guild_id = match ctx.cache.read().guild_channel(msg.channel_id) {
-        Some(channel) => channel.read().guild_id,
-        None => {
-            check_msg(msg.channel_id.say(&ctx.http, "Error finding channel info"));
-
-            return Ok(());
-        }
-    };
-
-    let manager_lock = ctx
-        .data
-        .read()
-        .get::<VoiceManager>()
-        .cloned()
-        .expect("Expected VoiceManager in ShareMap.");
-    let mut manager = manager_lock.lock();
-
-    if let Some(handler) = manager.get_mut(guild_id) {
-        handler.deafen(false);
-
-        check_msg(msg.channel_id.say(&ctx.http, "Undeafened"));
-    } else {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to undeafen in"),
-        );
-    }
-
-    Ok(())
-}
-
-#[command]
-fn unmute(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let guild_id = match ctx.cache.read().guild_channel(msg.channel_id) {
-        Some(channel) => channel.read().guild_id,
-        None => {
-            check_msg(msg.channel_id.say(&ctx.http, "Error finding channel info"));
-
-            return Ok(());
-        }
-    };
-    let manager_lock = ctx
-        .data
-        .read()
-        .get::<VoiceManager>()
-        .cloned()
-        .expect("Expected VoiceManager in ShareMap.");
-    let mut manager = manager_lock.lock();
-
-    if let Some(handler) = manager.get_mut(guild_id) {
-        handler.mute(false);
-
-        check_msg(msg.channel_id.say(&ctx.http, "Unmuted"));
-    } else {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to unmute in"),
         );
     }
 

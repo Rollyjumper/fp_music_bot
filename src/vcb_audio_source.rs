@@ -1,13 +1,8 @@
-//! Records a WAV file (roughly 4 seconds long) using the default input device and format.
-//!
-//! The input data is recorded to "$CARGO_MANIFEST_DIR/recorded.wav".
-
 extern crate anyhow;
 extern crate cpal;
 
-//use serenity::voice::{AudioType, AudioSource};
 use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
-use cpal::{StreamId, Device};
+use cpal::{Device, StreamId};
 
 use std::io::Read;
 
@@ -20,14 +15,12 @@ use std::collections::VecDeque;
 pub struct VCBAudioSource {
     stereo: bool,
     queue: Arc<Mutex<VecDeque<i16>>>,
-    device: Device, 
+    device: Device,
     stream_id: Option<StreamId>,
 }
 
 impl Read for VCBAudioSource {
-    // vérifier que ça copie bien
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-        //println!("VCBAudioSource read appelé.");
         loop {
             let q = self.queue.lock().unwrap();
             if q.len() != 0 {
@@ -55,9 +48,24 @@ impl VCBAudioSource {
         Ok(VCBAudioSource {
             queue: Arc::new(Mutex::new(VecDeque::<i16>::new())),
             stereo: (format.channels >= 2),
-            stream_id: None, 
+            stream_id: None,
             device: device,
         })
+    }
+
+    pub fn get_input_devices() -> Result<Vec<String>, anyhow::Error> {
+        let host = cpal::default_host();
+        let mut r: Vec<String> = vec![];
+        let devices = host.input_devices().unwrap(); // there should be input devices
+
+        for d in devices {
+            for f in d.supported_input_formats().unwrap() {
+                if f.min_sample_rate >= cpal::SampleRate(48000) {
+                    r.push(d.name()?);
+                }
+            }
+        }
+        Ok(r)
     }
 
     pub fn is_stereo(&self) -> bool {
@@ -76,7 +84,8 @@ impl VCBAudioSource {
         let el = host.event_loop();
         let q = Arc::clone(&self.queue);
 
-        let format = self.device
+        let format = self
+            .device
             .default_input_format()
             .expect("Failed to get default input format");
 
