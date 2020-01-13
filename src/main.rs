@@ -66,7 +66,7 @@ impl EventHandler for Handler {
 
 fn main() {
     let matches = App::new("fp-music-bot")
-        .about("Discord music bot that streams sound for a Virtual Audio Cable")
+        .about("Discord music bot that streams any sounds from a virtual audio cable to a voice channel")
         .arg(
             Arg::with_name("token")
                 .long("token")
