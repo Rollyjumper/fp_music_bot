@@ -52,7 +52,7 @@ When your bot is connected to your Discord server, you must connect to a voice c
 
 * `~join` : the bot will join the voice channel where you are connected
 * `~play` : the bot will start streaming any sound sent to your virtual audio cable
-* `~leave` : the will leave the voice channel 
+* `~leave` : the bot will leave the voice channel 
 
 So, to play some sounds or musics, configure your player to send outputs to you virtual audio cable. 
 
