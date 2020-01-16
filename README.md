@@ -15,7 +15,7 @@ The binary will be present in `target/release`.
 
 ## Prerequisites
 
-Of course, you must install (if not already the case) some kind of virtual audio cable. I suggest this one : https://www.vb-audio.com/Cable. 
+Of course, you must install (if it is not already the case) some kind of virtual audio cable. I suggest this one : https://www.vb-audio.com/Cable. 
 
 **Important Notes** : The input device for your virtual cable must be configured by default to use at least __48000hz__ for sample rate. It is necessary because Discord use `opus` codec for voice channels which does not support lesser than 48000hz sample rate (if I understood correctly).
 
