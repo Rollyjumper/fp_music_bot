@@ -1,7 +1,9 @@
 # fp_music_bot
-This is a Discord bot written in Rust for streaming music from a Virtual Audio Cable to Discord voice channel.
+This is a Discord bot written in Rust for streaming music from a Virtual Audio Cable to Discord voice channel. This is a little project I have done for a friend who was asking a bot like this one which can be launched only with a simple command line. 
 
-It uses [Cpal](https://docs.rs/cpal) and [Serenity](https://docs.rs/serenity).
+I am looking for all feedbacks you can provide. Thank you. 
+
+The bot uses [Cpal](https://docs.rs/cpal) and [Serenity](https://docs.rs/serenity).
 
 Be warned : I did not try to compile this for anything else than **Windows 10**.
 
